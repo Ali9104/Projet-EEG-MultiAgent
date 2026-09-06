@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+
   # --- MESSAGERIE (KAFKA) ---
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
@@ -96,6 +97,76 @@ services:
     ports:
       - "5173:80"
 
+  # --- AGENT ACQUISITION ---
+  acquisition:
+    build:
+      context: .
+      dockerfile: agents/Dockerfile
+    container_name: eeg-agent-acquisition
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    command: python -m agents.acquisition.agent
+
+  # --- AGENT ANALYSE ---
+  analysis:
+    build:
+      context: .
+      dockerfile: agents/Dockerfile
+    container_name: eeg-agent-analysis
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    command: python -m agents.analysis.agent
+
+  # --- AGENT DECISION ---
+  decision:
+    build:
+      context: .
+      dockerfile: agents/Dockerfile
+    container_name: eeg-agent-decision
+    depends_on:
+      - kafka
+      - mongodb
+      - redis
+      - minio
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      MONGO_URI: mongodb://root:rootpassword@mongodb:27017/
+      MONGO_DATABASE: eeg_database
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadminpassword
+      MINIO_BUCKET: eeg-data
+      MINIO_SECURE: "false"
+    command: python -m agents.decision.agent
+
+  # --- AGENT ARCHIVAGE ---
+  archival:
+    build:
+      context: .
+      dockerfile: agents/Dockerfile
+    container_name: eeg-agent-archival
+    depends_on:
+      - mongodb
+      - minio
+    environment:
+      MONGO_URI: mongodb://root:rootpassword@mongodb:27017/
+      MONGO_DATABASE: eeg_database
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadminpassword
+      MINIO_BUCKET: eeg-data
+      MINIO_SECURE: "false"
+      ARCHIVE_AFTER_HOURS: 24
+    command: python -m agents.archival.agent
+
+
+# --- VOLUMES ---
 volumes:
   mongo_data:
   minio_data:

@@ -1,48 +1,219 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
 import "./App.css";
 
-const API = "http://127.0.0.1:8000";
+const API_URL = "http://127.0.0.1:8000/api/eeg";
+
+const CHART_COLORS = {
+  normal: "#22c55e",
+  critical: "#ef4444",
+  archived: "#8b5cf6",
+  blue: "#3b82f6",
+};
 
 function App() {
   const [dashboard, setDashboard] = useState(null);
   const [patients, setPatients] = useState([]);
   const [alerts, setAlerts] = useState([]);
+
+  const [archives, setArchives] = useState([]);
+  const [archivePage, setArchivePage] = useState(1);
+  const [archiveTotal, setArchiveTotal] = useState(0);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+
   const [loading, setLoading] = useState(true);
 
-  const loadData = async () => {
-    try {
-      const [dashboardRes, patientsRes, alertsRes] = await Promise.all([
-        fetch(`${API}/api/eeg/dashboard`),
-        fetch(`${API}/api/eeg/patients`),
-        fetch(`${API}/api/eeg/alerts`),
-      ]);
+  const ARCHIVES_PER_PAGE = 20;
 
-      const dashboardData = await dashboardRes.json();
-      const patientsData = await patientsRes.json();
-      const alertsData = await alertsRes.json();
+  /* =====================================================
+     DASHBOARD
+  ===================================================== */
 
-      setDashboard(dashboardData);
-      setPatients(patientsData.patients || []);
-      setAlerts(alertsData.alerts || []);
-    } catch (error) {
-      console.error("Erreur API :", error);
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    fetch(`${API_URL}/dashboard`)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Erreur serveur");
+        }
+        return response.json();
+      })
+      .then((data) => setDashboard(data))
+      .catch((error) =>
+        console.error("Erreur dashboard :", error)
+      )
+      .finally(() => setLoading(false));
+  }, []);
+
+  /* =====================================================
+     PATIENTS
+  ===================================================== */
+
+  useEffect(() => {
+    fetch(`${API_URL}/patients`)
+      .then((response) => response.json())
+      .then((data) => setPatients(data.patients || []))
+      .catch((error) =>
+        console.error("Erreur patients :", error)
+      );
+  }, []);
+
+  /* =====================================================
+     ALERTES
+  ===================================================== */
+
+  useEffect(() => {
+    fetch(`${API_URL}/alerts`)
+      .then((response) => response.json())
+      .then((data) => setAlerts(data.alerts || []))
+      .catch((error) =>
+        console.error("Erreur alertes :", error)
+      );
+  }, []);
+
+  /* =====================================================
+     ARCHIVES
+  ===================================================== */
+
+  useEffect(() => {
+    setArchiveLoading(true);
+
+    fetch(
+      `${API_URL}/archives?page=${archivePage}&limit=${ARCHIVES_PER_PAGE}`
+    )
+      .then((response) => response.json())
+      .then((data) => {
+        setArchives(data.archives || []);
+        setArchiveTotal(data.total || 0);
+      })
+      .catch((error) =>
+        console.error("Erreur archives :", error)
+      )
+      .finally(() => setArchiveLoading(false));
+  }, [archivePage]);
+
+  /* =====================================================
+     VALUES
+  ===================================================== */
+
+  const totalEEG = dashboard?.total_eeg ?? 0;
+  const normalCount = dashboard?.normal ?? 0;
+  const criticalCount = dashboard?.alerts ?? 0;
+  const archivedCount = dashboard?.archived ?? archiveTotal;
+
+  const totalArchivePages = Math.max(
+    1,
+    Math.ceil(archiveTotal / ARCHIVES_PER_PAGE)
+  );
+
+  /* =====================================================
+     STORAGE CHART
+  ===================================================== */
+
+  const storageData = useMemo(
+    () => [
+      {
+        name: "Normal",
+        value: normalCount,
+        color: CHART_COLORS.normal,
+      },
+      {
+        name: "Critique",
+        value: criticalCount,
+        color: CHART_COLORS.critical,
+      },
+      {
+        name: "Archivé",
+        value: archivedCount,
+        color: CHART_COLORS.archived,
+      },
+    ],
+    [normalCount, criticalCount, archivedCount]
+  );
+
+  /* =====================================================
+     ALERTS BY PATIENT
+  ===================================================== */
+
+  const alertsByPatient = useMemo(() => {
+    const counter = {};
+
+    alerts.forEach((alert) => {
+      const patient = alert.patient_id || "Inconnu";
+
+      counter[patient] = (counter[patient] || 0) + 1;
+    });
+
+    return Object.entries(counter).map(
+      ([patient, count]) => ({
+        patient,
+        count,
+      })
+    );
+  }, [alerts]);
+
+  /* =====================================================
+     AGENTS
+  ===================================================== */
+
+  const agents = [
+    {
+      name: "Acquisition",
+      description: "Réception des données EEG",
+      icon: "⇣",
+    },
+    {
+      name: "Analyse",
+      description: "Détection des anomalies",
+      icon: "⌁",
+    },
+    {
+      name: "Décision",
+      description: "Choix de la stratégie de stockage",
+      icon: "◆",
+    },
+    {
+      name: "Archivage",
+      description: "Archivage des anciennes données",
+      icon: "▣",
+    },
+  ];
+
+  /* =====================================================
+     PAGINATION
+  ===================================================== */
+
+  const goToPreviousPage = () => {
+    if (archivePage > 1) {
+      setArchivePage((page) => page - 1);
     }
   };
 
-  useEffect(() => {
-    loadData();
+  const goToNextPage = () => {
+    if (archivePage < totalArchivePages) {
+      setArchivePage((page) => page + 1);
+    }
+  };
 
-    const interval = setInterval(loadData, 5000);
-
-    return () => clearInterval(interval);
-  }, []);
+  /* =====================================================
+     LOADING
+  ===================================================== */
 
   if (loading) {
     return (
-      <div className="loading">
-        <div className="loading-spinner"></div>
+      <div className="loading-screen">
+        <div className="loader"></div>
         <p>Chargement du système EEG...</p>
       </div>
     );
@@ -51,225 +222,684 @@ function App() {
   return (
     <div className="app">
 
-      {/* HEADER */}
+      {/* =================================================
+          HEADER
+      ================================================= */}
+
       <header className="header">
-        <div>
-          <h1>EEG Neonatal Monitoring</h1>
-          <p>Système Multi-Agent pour la gestion des EEG néonataux</p>
+
+        <div className="header-content">
+
+          <div className="brand">
+
+            <div className="brand-icon">
+              EEG
+            </div>
+
+            <div>
+              <h1>EEG Monitoring</h1>
+
+              <p>
+                Système Multi-Agent de gestion des EEG néonataux
+              </p>
+            </div>
+
+          </div>
+
+          <div className="system-status">
+            <span className="status-dot"></span>
+            Système opérationnel
+          </div>
+
         </div>
 
-        <div className="system-status">
-          <span className="status-dot"></span>
-          Système opérationnel
-        </div>
       </header>
 
-      {/* STATISTICS */}
-      <section className="stats-grid">
+      <main className="container">
 
-        <div className="stat-card">
-          <div className="stat-icon">👶</div>
-          <div>
-            <span className="stat-label">Patients</span>
-            <strong>{dashboard?.patients ?? 0}</strong>
+        {/* =================================================
+            KPI
+        ================================================= */}
+
+        <section className="stats">
+
+          <div className="stat-card">
+
+            <div className="stat-icon blue">
+              👶
+            </div>
+
+            <div className="stat-content">
+
+              <span>Patients</span>
+
+              <strong>
+                {dashboard?.patients ?? 0}
+              </strong>
+
+              <small>
+                patients surveillés
+              </small>
+
+            </div>
+
           </div>
-        </div>
 
-        <div className="stat-card">
-          <div className="stat-icon">📊</div>
-          <div>
-            <span className="stat-label">Total EEG</span>
-            <strong>{dashboard?.total_eeg ?? 0}</strong>
+          <div className="stat-card">
+
+            <div className="stat-icon cyan">
+              ◈
+            </div>
+
+            <div className="stat-content">
+
+              <span>Total EEG</span>
+
+              <strong>
+                {totalEEG.toLocaleString()}
+              </strong>
+
+              <small>
+                données collectées
+              </small>
+
+            </div>
+
           </div>
-        </div>
 
-        <div className="stat-card critical">
-          <div className="stat-icon">🚨</div>
-          <div>
-            <span className="stat-label">Alertes critiques</span>
-            <strong>{dashboard?.alerts ?? 0}</strong>
+          <div className="stat-card critical-card">
+
+            <div className="stat-icon red">
+              !
+            </div>
+
+            <div className="stat-content">
+
+              <span>Alertes critiques</span>
+
+              <strong>
+                {criticalCount.toLocaleString()}
+              </strong>
+
+              <small>
+                anomalies détectées
+              </small>
+
+            </div>
+
           </div>
-        </div>
 
-        <div className="stat-card archive">
-          <div className="stat-icon">🗄️</div>
-          <div>
-            <span className="stat-label">EEG archivés</span>
-            <strong>{dashboard?.archived ?? 0}</strong>
+          <div className="stat-card">
+
+            <div className="stat-icon purple">
+              ▣
+            </div>
+
+            <div className="stat-content">
+
+              <span>Archives</span>
+
+              <strong>
+                {archivedCount.toLocaleString()}
+              </strong>
+
+              <small>
+                données archivées
+              </small>
+
+            </div>
+
           </div>
-        </div>
 
-      </section>
+        </section>
 
-      {/* MAIN CONTENT */}
-      <div className="content-grid">
+        {/* =================================================
+            AGENTS
+        ================================================= */}
 
-        {/* PATIENTS */}
-        <section className="panel">
+        <section className="panel agents-panel">
+
           <div className="panel-header">
+
+            <div>
+              <h2>Agents du système</h2>
+
+              <p>
+                État des agents multi-agents
+              </p>
+            </div>
+
+            <div className="agents-online">
+              <span></span>
+              4 agents actifs
+            </div>
+
+          </div>
+
+          <div className="agents-grid">
+
+            {agents.map((agent) => (
+
+              <div
+                className="agent-card"
+                key={agent.name}
+              >
+
+                <div className="agent-icon">
+                  {agent.icon}
+                </div>
+
+                <div className="agent-info">
+
+                  <strong>
+                    Agent {agent.name}
+                  </strong>
+
+                  <span>
+                    {agent.description}
+                  </span>
+
+                </div>
+
+                <div className="agent-status">
+                  <span></span>
+                  Actif
+                </div>
+
+              </div>
+
+            ))}
+
+          </div>
+
+        </section>
+
+        {/* =================================================
+            CHARTS
+        ================================================= */}
+
+        <section className="charts-grid">
+
+          {/* STORAGE */}
+
+          <div className="panel chart-panel">
+
+            <div className="panel-header">
+
+              <div>
+                <h2>Répartition des données</h2>
+
+                <p>
+                  État des données EEG dans le système
+                </p>
+              </div>
+
+            </div>
+
+            <div className="chart-container">
+
+              <ResponsiveContainer
+                width="100%"
+                height={300}
+              >
+
+                <PieChart>
+
+                  <Pie
+                    data={storageData}
+                    cx="50%"
+                    cy="48%"
+                    innerRadius={72}
+                    outerRadius={108}
+                    paddingAngle={4}
+                    dataKey="value"
+                    nameKey="name"
+                  >
+
+                    {storageData.map(
+                      (entry, index) => (
+
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={entry.color}
+                          stroke="none"
+                        />
+
+                      )
+                    )}
+
+                  </Pie>
+
+                  <Tooltip
+                    contentStyle={{
+                      borderRadius: "10px",
+                      border: "1px solid #26334a",
+                      background: "#101827",
+                      color: "#ffffff",
+                    }}
+                  />
+
+                  <Legend />
+
+                </PieChart>
+
+              </ResponsiveContainer>
+
+            </div>
+
+          </div>
+
+          {/* ALERTS */}
+
+          <div className="panel chart-panel">
+
+            <div className="panel-header">
+
+              <div>
+                <h2>Alertes par patient</h2>
+
+                <p>
+                  Distribution des anomalies détectées
+                </p>
+              </div>
+
+            </div>
+
+            <div className="chart-container">
+
+              {alertsByPatient.length === 0 ? (
+
+                <div className="empty-state">
+                  Aucune donnée disponible.
+                </div>
+
+              ) : (
+
+                <ResponsiveContainer
+                  width="100%"
+                  height={300}
+                >
+
+                  <BarChart
+                    data={alertsByPatient}
+                    margin={{
+                      top: 10,
+                      right: 20,
+                      left: -10,
+                      bottom: 10,
+                    }}
+                  >
+
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="#26334a"
+                    />
+
+                    <XAxis
+                      dataKey="patient"
+                      tick={{
+                        fill: "#94a3b8",
+                        fontSize: 11,
+                      }}
+                      axisLine={{
+                        stroke: "#334155",
+                      }}
+                    />
+
+                    <YAxis
+                      allowDecimals={false}
+                      tick={{
+                        fill: "#94a3b8",
+                        fontSize: 11,
+                      }}
+                      axisLine={{
+                        stroke: "#334155",
+                      }}
+                    />
+
+                    <Tooltip
+                      contentStyle={{
+                        borderRadius: "10px",
+                        border: "1px solid #26334a",
+                        background: "#101827",
+                        color: "#ffffff",
+                      }}
+                    />
+
+                    <Bar
+                      dataKey="count"
+                      name="Alertes"
+                      fill={CHART_COLORS.critical}
+                      radius={[7, 7, 0, 0]}
+                    />
+
+                  </BarChart>
+
+                </ResponsiveContainer>
+
+              )}
+
+            </div>
+
+          </div>
+
+        </section>
+
+        {/* =================================================
+            PATIENTS
+        ================================================= */}
+
+        <section className="panel">
+
+          <div className="panel-header">
+
             <div>
               <h2>Patients</h2>
-              <span>Patients surveillés</span>
+
+              <p>
+                Patients actuellement surveillés
+              </p>
             </div>
-            <span className="badge">{patients.length}</span>
+
+            <span className="count-badge">
+              {patients.length} patient(s)
+            </span>
+
           </div>
 
-          <div className="patients-list">
-            {patients.map((patient) => (
-              <div className="patient-card" key={patient}>
-                <div className="patient-avatar">
-                  👶
+          {patients.length === 0 ? (
+
+            <div className="empty-state">
+              Aucun patient disponible.
+            </div>
+
+          ) : (
+
+            <div className="patients">
+
+              {patients.map((patient) => (
+
+                <div
+                  className="patient-card"
+                  key={patient}
+                >
+
+                  <div className="patient-avatar">
+                    {patient
+                      .toString()
+                      .slice(-2)}
+                  </div>
+
+                  <div className="patient-details">
+
+                    <strong>
+                      {patient}
+                    </strong>
+
+                    <span>
+                      Surveillance EEG active
+                    </span>
+
+                  </div>
+
+                  <div className="patient-status">
+                    <span></span>
+                    Actif
+                  </div>
+
                 </div>
 
-                <div className="patient-info">
-                  <strong>{patient}</strong>
-                  <span>Monitoring EEG actif</span>
-                </div>
+              ))}
 
-                <span className="online-dot"></span>
-              </div>
-            ))}
-          </div>
+            </div>
+
+          )}
+
         </section>
 
-        {/* AGENTS */}
+        {/* =================================================
+            ALERTES
+        ================================================= */}
+
         <section className="panel">
+
           <div className="panel-header">
+
             <div>
-              <h2>Agents Multi-Agent</h2>
-              <span>État des agents</span>
+              <h2>Alertes critiques</h2>
+
+              <p>
+                Dernières anomalies détectées
+              </p>
             </div>
+
+            <span className="critical-badge">
+              {alerts.length} alertes
+            </span>
+
           </div>
 
-          <div className="agents">
+          {alerts.length === 0 ? (
 
-            <div className="agent">
-              <div className="agent-icon">📥</div>
-              <div>
-                <strong>Acquisition</strong>
-                <span>Réception EEG</span>
-              </div>
-              <span className="agent-status">ACTIF</span>
+            <div className="empty-state">
+              Aucune alerte critique.
             </div>
 
-            <div className="agent">
-              <div className="agent-icon">🧠</div>
-              <div>
-                <strong>Analyse</strong>
-                <span>Détection anomalies</span>
-              </div>
-              <span className="agent-status">ACTIF</span>
+          ) : (
+
+            <div className="alerts">
+
+              {alerts
+                .slice(0, 10)
+                .map((alert) => (
+
+                  <div
+                    className="alert"
+                    key={alert._id}
+                  >
+
+                    <div className="alert-indicator">
+                      !
+                    </div>
+
+                    <div className="alert-main">
+
+                      <strong>
+                        {alert.patient_id}
+                      </strong>
+
+                      <span>
+                        Anomalie détectée
+                      </span>
+
+                    </div>
+
+                    <div className="alert-info">
+
+                      <span>
+                        Step
+                      </span>
+
+                      <strong>
+                        {alert.step}
+                      </strong>
+
+                    </div>
+
+                    <div className="alert-info">
+
+                      <span>
+                        Amplitude
+                      </span>
+
+                      <strong>
+                        {alert.max_amplitude}
+                      </strong>
+
+                    </div>
+
+                    <span className="priority-badge">
+                      {alert.priority}
+                    </span>
+
+                  </div>
+
+                ))}
+
             </div>
 
-            <div className="agent">
-              <div className="agent-icon">⚙️</div>
-              <div>
-                <strong>Décision</strong>
-                <span>Politique stockage</span>
-              </div>
-              <span className="agent-status">ACTIF</span>
-            </div>
+          )}
 
-            <div className="agent">
-              <div className="agent-icon">🗄️</div>
-              <div>
-                <strong>Archivage</strong>
-                <span>Gestion données anciennes</span>
-              </div>
-              <span className="agent-status">ACTIF</span>
-            </div>
-
-          </div>
         </section>
 
-      </div>
+        {/* =================================================
+            ARCHIVES
+        ================================================= */}
 
-      {/* STORAGE */}
-      <section className="panel storage-panel">
+        <section className="panel">
 
-        <div className="panel-header">
-          <div>
-            <h2>Architecture de stockage</h2>
-            <span>Répartition selon la priorité EEG</span>
-          </div>
-        </div>
+          <div className="panel-header">
 
-        <div className="storage-grid">
-
-          <div className="storage-card">
-            <div className="storage-icon">⚡</div>
             <div>
-              <strong>Redis</strong>
-              <span>Données critiques</span>
+              <h2>Archives EEG</h2>
+
+              <p>
+                Données archivées dans MinIO
+              </p>
             </div>
-            <small>Cache temps réel</small>
+
+            <span className="count-badge">
+              {archiveTotal.toLocaleString()} archives
+            </span>
+
           </div>
 
-          <div className="storage-card">
-            <div className="storage-icon">🍃</div>
-            <div>
-              <strong>MongoDB</strong>
-              <span>Métadonnées EEG</span>
+          {archiveLoading ? (
+
+            <div className="empty-state">
+              Chargement des archives...
             </div>
-            <small>Base documentaire</small>
-          </div>
 
-          <div className="storage-card">
-            <div className="storage-icon">☁️</div>
-            <div>
-              <strong>MinIO</strong>
-              <span>Fichiers EEG</span>
+          ) : archives.length === 0 ? (
+
+            <div className="empty-state">
+              Aucune archive disponible.
             </div>
-            <small>Stockage objet</small>
-          </div>
 
-        </div>
+          ) : (
 
-      </section>
+            <>
 
-      {/* ALERTS */}
-      <section className="panel alerts-panel">
+              <div className="archive-table-wrapper">
 
-        <div className="panel-header">
-          <div>
-            <h2>Alertes critiques</h2>
-            <span>Dernières anomalies détectées</span>
-          </div>
+                <table className="archive-table">
 
-          <span className="critical-badge">
-            {dashboard?.alerts ?? 0} alertes
-          </span>
-        </div>
+                  <thead>
 
-        <div className="alerts-list">
+                    <tr>
+                      <th>Patient</th>
+                      <th>Step</th>
+                      <th>Timestamp</th>
+                      <th>Priorité</th>
+                      <th>Amplitude</th>
+                      <th>Fichier MinIO</th>
+                    </tr>
 
-          {alerts.slice(0, 10).map((alert) => (
-            <div className="alert-row" key={alert._id}>
+                  </thead>
 
-              <div className="alert-indicator"></div>
+                  <tbody>
 
-              <div className="alert-main">
-                <strong>{alert.patient_id}</strong>
+                    {archives.map((archive) => (
+
+                      <tr key={archive._id}>
+
+                        <td>
+                          <strong>
+                            {archive.patient_id}
+                          </strong>
+                        </td>
+
+                        <td>
+                          {archive.step}
+                        </td>
+
+                        <td>
+                          {new Date(
+                            archive.timestamp
+                          ).toLocaleString()}
+                        </td>
+
+                        <td>
+
+                          <span
+                            className={
+                              archive.priority ===
+                              "CRITIQUE"
+                                ? "priority-badge"
+                                : "normal-badge"
+                            }
+                          >
+                            {archive.priority}
+                          </span>
+
+                        </td>
+
+                        <td>
+                          {archive.max_amplitude}
+                        </td>
+
+                        <td className="archive-path">
+                          {archive.archive_object}
+                        </td>
+
+                      </tr>
+
+                    ))}
+
+                  </tbody>
+
+                </table>
+
+              </div>
+
+              <div className="pagination">
+
+                <button
+                  onClick={goToPreviousPage}
+                  disabled={archivePage === 1}
+                >
+                  ← Précédent
+                </button>
+
                 <span>
-                  Step {alert.step} — amplitude {alert.max_amplitude}
+                  Page <strong>{archivePage}</strong>
+                  {" "}sur{" "}
+                  <strong>{totalArchivePages}</strong>
                 </span>
+
+                <button
+                  onClick={goToNextPage}
+                  disabled={
+                    archivePage >= totalArchivePages
+                  }
+                >
+                  Suivant →
+                </button>
+
               </div>
 
-              <div className="alert-priority">
-                CRITIQUE
-              </div>
+            </>
 
-            </div>
-          ))}
+          )}
 
-        </div>
+        </section>
 
-      </section>
+      </main>
 
-      {/* FOOTER */}
-      <footer>
-        <span>EEG Multi-Agent System</span>
-        <span>Kafka • Redis • MongoDB • MinIO • FastAPI</span>
+      <footer className="footer">
+        <p>
+          EEG Multi-Agent System · Technologies de Stockage Big Data
+        </p>
       </footer>
 
     </div>

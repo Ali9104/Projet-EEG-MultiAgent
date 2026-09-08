@@ -11,6 +11,7 @@ from backend.services.minio_service import (
 )
 
 from .archival_policy import is_old
+from agents.common.heartbeat import AgentHeartbeat
 
 
 class ArchivalAgent:
@@ -64,6 +65,8 @@ class ArchivalAgent:
         print("========================================")
         print("        AGENT D'ARCHIVAGE EEG")
         print("========================================")
+        heartbeat = AgentHeartbeat("archival")
+        heartbeat.start()
 
         documents = self.db.eeg_data.find(
             {"archived": {"$ne": True}}

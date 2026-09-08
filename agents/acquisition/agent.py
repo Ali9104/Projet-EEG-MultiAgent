@@ -10,6 +10,7 @@ from .config import (
     SAMPLING_RATE
 )
 from .producer import EEGProducer
+from agents.common.heartbeat import AgentHeartbeat
 
 
 class AcquisitionAgent:
@@ -55,6 +56,9 @@ class AcquisitionAgent:
         print("========================================")
         print("Agent démarré.")
         print("Publication vers Kafka : eeg-raw")
+        heartbeat = AgentHeartbeat("acquisition")
+        heartbeat.start()
+
 
         try:
 

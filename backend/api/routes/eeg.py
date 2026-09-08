@@ -123,6 +123,88 @@ def get_dashboard():
 
     finally:
         client.close()
+        
+@router.get("/archives")
+def get_archives(page: int = 1, limit: int = 20):
+    from backend.services.mongo_service import create_client, get_database
+
+    if page < 1:
+        page = 1
+
+    if limit < 1:
+        limit = 20
+
+    if limit > 100:
+        limit = 100
+
+    client = create_client()
+
+    try:
+        db = get_database(client)
+
+        total = db.eeg_data.count_documents({"archived": True})
+
+        skip = (page - 1) * limit
+
+        archives = list(
+            db.eeg_data.find(
+                {"archived": True},
+                {
+                    "_id": 1,
+                    "patient_id": 1,
+                    "timestamp": 1,
+                    "step": 1,
+                    "priority": 1,
+                    "max_amplitude": 1,
+                    "archive_object": 1
+                }
+            )
+            .sort("stored_at", -1)
+            .skip(skip)
+            .limit(limit)
+        )
+
+        for archive in archives:
+            archive["_id"] = str(archive["_id"])
+
+        return {
+            "count": len(archives),
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "archives": archives
+        }
+
+    finally:
+        client.close()
+
+@router.get("/agents/status")
+def get_agents_status():
+    import os
+    import redis
+
+    redis_client = redis.Redis(
+        host=os.getenv("REDIS_HOST", "localhost"),
+        port=int(os.getenv("REDIS_PORT", "6379")),
+        decode_responses=True,
+    )
+
+    agents = [
+        "acquisition",
+        "analysis",
+        "decision",
+        "archival",
+    ]
+
+    statuses = {}
+
+    for agent in agents:
+        key = f"agent:heartbeat:{agent}"
+        statuses[agent] = "active" if redis_client.exists(key) else "inactive"
+
+    return {
+        "agents": statuses
+    }
 
 @router.get("/{id}")
 def get_eeg(id: str):

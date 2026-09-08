@@ -18,6 +18,7 @@ from backend.services.mongo_service import (
 
 from .consumer import create_decision_consumer
 from .storage_policy import get_storage_policy
+from agents.common.heartbeat import AgentHeartbeat
 
 
 class DecisionAgent:
@@ -151,6 +152,9 @@ class DecisionAgent:
         print("       AGENT DE DECISION EEG")
         print("========================================")
         print("Écoute du topic : eeg-priority")
+        heartbeat = AgentHeartbeat("decision")
+        heartbeat.start()
+
 
         try:
 

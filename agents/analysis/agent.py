@@ -2,6 +2,7 @@ from backend.services.kafka_service import create_producer
 
 from .consumer import create_eeg_consumer
 from .analyzer import analyze_eeg
+from agents.common.heartbeat import AgentHeartbeat
 
 
 OUTPUT_TOPIC = "eeg-priority"
@@ -67,6 +68,8 @@ class AnalysisAgent:
         print("          AGENT D'ANALYSE EEG")
         print("========================================")
         print("Écoute du topic : eeg-raw")
+        heartbeat = AgentHeartbeat("analysis")
+        heartbeat.start()
 
         try:
 

@@ -105,8 +105,11 @@ services:
     container_name: eeg-agent-acquisition
     depends_on:
       - kafka
+      - redis
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     command: python -m agents.acquisition.agent
 
   # --- AGENT ANALYSE ---
@@ -117,8 +120,11 @@ services:
     container_name: eeg-agent-analysis
     depends_on:
       - kafka
+      - redis
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     command: python -m agents.analysis.agent
 
   # --- AGENT DECISION ---
@@ -154,6 +160,7 @@ services:
     depends_on:
       - mongodb
       - minio
+      - redis
     environment:
       MONGO_URI: mongodb://root:rootpassword@mongodb:27017/
       MONGO_DATABASE: eeg_database
@@ -163,6 +170,8 @@ services:
       MINIO_BUCKET: eeg-data
       MINIO_SECURE: "false"
       ARCHIVE_AFTER_HOURS: 24
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     command: python -m agents.archival.agent
 
 

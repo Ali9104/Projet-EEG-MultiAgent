@@ -53,6 +53,40 @@ body {
   background: var(--bg);
 }
 
+@keyframes scan-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(220%);
+  }
+}
+
+@keyframes alarm-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(244, 82, 94, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(244, 82, 94, 0);
+  }
+}
+
+@keyframes heartbeat-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(52, 211, 153, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
 button {
   font: inherit;
 }
@@ -154,7 +188,7 @@ button {
   height: 6px;
   border-radius: 50%;
   background: var(--green);
-  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.18);
+  animation: heartbeat-pulse 1.8s ease-out infinite;
 }
 
 
@@ -220,6 +254,7 @@ button {
 .stat-icon.red {
   background: var(--red-soft);
   color: var(--red);
+  animation: alarm-pulse 1.6s ease-out infinite;
 }
 
 .stat-icon.purple {
@@ -242,11 +277,35 @@ button {
 }
 
 .stat-content > strong {
-  color: var(--text-primary);
+  display: inline-block;
+
+  padding: 2px 8px;
+  border-radius: 4px;
+
+  background: #020508;
+  color: var(--blue);
+
   font-family: var(--font-mono);
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 700;
-  line-height: 1.1;
+  line-height: 1.35;
+  letter-spacing: 0.5px;
+
+  text-shadow: 0 0 8px currentColor;
+}
+
+/* Match each digital readout's glow to its KPI's own accent, using
+   the icon that already carries the color as a sibling reference. */
+.stat-icon.cyan ~ .stat-content > strong {
+  color: var(--cyan);
+}
+
+.stat-icon.red ~ .stat-content > strong {
+  color: var(--red);
+}
+
+.stat-icon.purple ~ .stat-content > strong {
+  color: var(--purple);
 }
 
 .stat-content > small {
@@ -431,30 +490,102 @@ button {
   margin-bottom: 0;
 }
 
+/* "Monitor screen" treatment: near-black CRT background with a faint
+   phosphor grid, like a bedside vitals monitor, so the traces read as
+   live signal rather than a generic report chart. */
 .chart-container {
+  position: relative;
   width: 100%;
   min-height: 280px;
 
   display: flex;
   align-items: center;
   justify-content: center;
+
+  padding: 10px;
+  border-radius: 8px;
+  overflow: hidden;
+
+  background:
+    repeating-linear-gradient(
+      to right,
+      rgba(34, 211, 238, 0.055) 0,
+      rgba(34, 211, 238, 0.055) 1px,
+      transparent 1px,
+      transparent 24px
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      rgba(34, 211, 238, 0.055) 0,
+      rgba(34, 211, 238, 0.055) 1px,
+      transparent 1px,
+      transparent 24px
+    ),
+    #030810;
+
+  border: 1px solid #0e2233;
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.55);
+}
+
+.chart-container::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 0 0;
+  width: 40%;
+
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(34, 211, 238, 0.06),
+    transparent
+  );
+
+  animation: scan-sweep 6s linear infinite;
+  pointer-events: none;
 }
 
 .chart-container svg {
   outline: none;
+  position: relative;
+  z-index: 1;
 }
 
 .chart-container .recharts-default-tooltip {
-  border-radius: 8px !important;
+  border-radius: 6px !important;
+  background: #020508 !important;
+  border: 1px solid var(--cyan) !important;
+  box-shadow: 0 0 14px rgba(34, 211, 238, 0.25);
+}
+
+.chart-container .recharts-tooltip-label,
+.chart-container .recharts-tooltip-item {
+  font-family: var(--font-mono) !important;
 }
 
 .chart-container .recharts-legend-item-text {
   color: var(--text-secondary) !important;
-  font-size: 12px !important;
+  font-family: var(--font-mono);
+  font-size: 11.5px !important;
 }
 
 .chart-container .recharts-cartesian-axis-tick text {
-  fill: var(--text-secondary);
+  fill: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+.chart-container .recharts-cartesian-grid line {
+  stroke: rgba(34, 211, 238, 0.06);
+}
+
+/* Give every trace/segment a soft phosphor glow, regardless of its
+   own fill color, so pie slices and bars read like an illuminated
+   signal on a dark screen rather than flat print colors. */
+.chart-container .recharts-pie-sector path,
+.chart-container .recharts-rectangle,
+.chart-container .recharts-bar-rectangle path {
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.35));
+  stroke: rgba(3, 8, 16, 0.6);
+  stroke-width: 1px;
 }
 
 
@@ -642,6 +773,8 @@ button {
 
   font-size: 14px;
   font-weight: 800;
+
+  animation: alarm-pulse 1.6s ease-out infinite;
 }
 
 .alert-main {

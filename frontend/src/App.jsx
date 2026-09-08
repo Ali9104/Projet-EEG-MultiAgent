@@ -33,6 +33,8 @@ function App() {
   const [archiveTotal, setArchiveTotal] = useState(0);
   const [archiveLoading, setArchiveLoading] = useState(false);
 
+  const [agentStatuses, setAgentStatuses] = useState({});
+
   const [loading, setLoading] = useState(true);
 
   const ARCHIVES_PER_PAGE = 20;
@@ -80,6 +82,40 @@ function App() {
       .catch((error) =>
         console.error("Erreur alertes :", error)
       );
+  }, []);
+
+  /* =====================================================
+     AGENTS STATUS
+  ===================================================== */
+
+  useEffect(() => {
+    const fetchAgentStatuses = () => {
+      fetch(`${API_URL}/agents/status`)
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error("Erreur statut agents");
+          }
+
+          return response.json();
+        })
+        .then((data) => {
+          setAgentStatuses(data.agents || {});
+        })
+        .catch((error) =>
+          console.error("Erreur statuts agents :", error)
+        );
+    };
+
+    // Première récupération immédiate
+    fetchAgentStatuses();
+
+    // Actualisation toutes les 5 secondes
+    const interval = setInterval(
+      fetchAgentStatuses,
+      5000
+    );
+
+    return () => clearInterval(interval);
   }, []);
 
   /* =====================================================
@@ -170,25 +206,33 @@ function App() {
   const agents = [
     {
       name: "Acquisition",
+      id: "acquisition",
       description: "Réception des données EEG",
       icon: "⇣",
     },
     {
       name: "Analyse",
+      id: "analysis",
       description: "Détection des anomalies",
       icon: "⌁",
     },
     {
       name: "Décision",
+      id: "decision",
       description: "Choix de la stratégie de stockage",
       icon: "◆",
     },
     {
       name: "Archivage",
+      id: "archival",
       description: "Archivage des anciennes données",
       icon: "▣",
     },
   ];
+
+  const activeAgentsCount = Object.values(
+    agentStatuses
+  ).filter((status) => status === "active").length;
 
   /* =====================================================
      PAGINATION
@@ -214,7 +258,10 @@ function App() {
     return (
       <div className="loading-screen">
         <div className="loader"></div>
-        <p>Chargement du système EEG...</p>
+
+        <p>
+          Chargement du système EEG...
+        </p>
       </div>
     );
   }
@@ -237,18 +284,25 @@ function App() {
             </div>
 
             <div>
-              <h1>EEG Monitoring</h1>
+
+              <h1>
+                EEG Monitoring
+              </h1>
 
               <p>
                 Système Multi-Agent de gestion des EEG néonataux
               </p>
+
             </div>
 
           </div>
 
           <div className="system-status">
+
             <span className="status-dot"></span>
+
             Système opérationnel
+
           </div>
 
         </div>
@@ -271,7 +325,9 @@ function App() {
 
             <div className="stat-content">
 
-              <span>Patients</span>
+              <span>
+                Patients
+              </span>
 
               <strong>
                 {dashboard?.patients ?? 0}
@@ -293,7 +349,9 @@ function App() {
 
             <div className="stat-content">
 
-              <span>Total EEG</span>
+              <span>
+                Total EEG
+              </span>
 
               <strong>
                 {totalEEG.toLocaleString()}
@@ -315,7 +373,9 @@ function App() {
 
             <div className="stat-content">
 
-              <span>Alertes critiques</span>
+              <span>
+                Alertes critiques
+              </span>
 
               <strong>
                 {criticalCount.toLocaleString()}
@@ -337,7 +397,9 @@ function App() {
 
             <div className="stat-content">
 
-              <span>Archives</span>
+              <span>
+                Archives
+              </span>
 
               <strong>
                 {archivedCount.toLocaleString()}
@@ -362,53 +424,79 @@ function App() {
           <div className="panel-header">
 
             <div>
-              <h2>Agents du système</h2>
+
+              <h2>
+                Agents du système
+              </h2>
 
               <p>
                 État des agents multi-agents
               </p>
+
             </div>
 
             <div className="agents-online">
+
               <span></span>
-              4 agents actifs
+
+              {activeAgentsCount} agent
+              {activeAgentsCount > 1 ? "s" : ""} actif
+              {activeAgentsCount > 1 ? "s" : ""}
+
             </div>
 
           </div>
 
           <div className="agents-grid">
 
-            {agents.map((agent) => (
+            {agents.map((agent) => {
 
-              <div
-                className="agent-card"
-                key={agent.name}
-              >
+              const isActive =
+                agentStatuses[agent.id] === "active";
 
-                <div className="agent-icon">
-                  {agent.icon}
+              return (
+
+                <div
+                  className="agent-card"
+                  key={agent.name}
+                >
+
+                  <div className="agent-icon">
+                    {agent.icon}
+                  </div>
+
+                  <div className="agent-info">
+
+                    <strong>
+                      Agent {agent.name}
+                    </strong>
+
+                    <span>
+                      {agent.description}
+                    </span>
+
+                  </div>
+
+                  <div
+                    className={`agent-status ${
+                      isActive
+                        ? "active"
+                        : "inactive"
+                    }`}
+                  >
+
+                    <span></span>
+
+                    {isActive
+                      ? "Actif"
+                      : "Inactif"}
+
+                  </div>
+
                 </div>
 
-                <div className="agent-info">
-
-                  <strong>
-                    Agent {agent.name}
-                  </strong>
-
-                  <span>
-                    {agent.description}
-                  </span>
-
-                </div>
-
-                <div className="agent-status">
-                  <span></span>
-                  Actif
-                </div>
-
-              </div>
-
-            ))}
+              );
+            })}
 
           </div>
 
@@ -427,11 +515,15 @@ function App() {
             <div className="panel-header">
 
               <div>
-                <h2>Répartition des données</h2>
+
+                <h2>
+                  Répartition des données
+                </h2>
 
                 <p>
                   État des données EEG dans le système
                 </p>
+
               </div>
 
             </div>
@@ -496,11 +588,15 @@ function App() {
             <div className="panel-header">
 
               <div>
-                <h2>Alertes par patient</h2>
+
+                <h2>
+                  Alertes par patient
+                </h2>
 
                 <p>
                   Distribution des anomalies détectées
                 </p>
+
               </div>
 
             </div>
@@ -594,11 +690,15 @@ function App() {
           <div className="panel-header">
 
             <div>
-              <h2>Patients</h2>
+
+              <h2>
+                Patients
+              </h2>
 
               <p>
                 Patients actuellement surveillés
               </p>
+
             </div>
 
             <span className="count-badge">
@@ -625,9 +725,11 @@ function App() {
                 >
 
                   <div className="patient-avatar">
+
                     {patient
                       .toString()
                       .slice(-2)}
+
                   </div>
 
                   <div className="patient-details">
@@ -643,8 +745,11 @@ function App() {
                   </div>
 
                   <div className="patient-status">
+
                     <span></span>
+
                     Actif
+
                   </div>
 
                 </div>
@@ -666,11 +771,15 @@ function App() {
           <div className="panel-header">
 
             <div>
-              <h2>Alertes critiques</h2>
+
+              <h2>
+                Alertes critiques
+              </h2>
 
               <p>
                 Dernières anomalies détectées
               </p>
+
             </div>
 
             <span className="critical-badge">
@@ -761,11 +870,15 @@ function App() {
           <div className="panel-header">
 
             <div>
-              <h2>Archives EEG</h2>
+
+              <h2>
+                Archives EEG
+              </h2>
 
               <p>
                 Données archivées dans MinIO
               </p>
+
             </div>
 
             <span className="count-badge">
@@ -839,7 +952,9 @@ function App() {
                                 : "normal-badge"
                             }
                           >
+
                             {archive.priority}
+
                           </span>
 
                         </td>
@@ -872,9 +987,19 @@ function App() {
                 </button>
 
                 <span>
-                  Page <strong>{archivePage}</strong>
+
+                  Page{" "}
+
+                  <strong>
+                    {archivePage}
+                  </strong>
+
                   {" "}sur{" "}
-                  <strong>{totalArchivePages}</strong>
+
+                  <strong>
+                    {totalArchivePages}
+                  </strong>
+
                 </span>
 
                 <button
@@ -897,9 +1022,11 @@ function App() {
       </main>
 
       <footer className="footer">
+
         <p>
           EEG Multi-Agent System · Technologies de Stockage Big Data
         </p>
+
       </footer>
 
     </div>

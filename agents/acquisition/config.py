@@ -1,6 +1,8 @@
 OUTPUT_TOPIC = "eeg-raw"
 
 PATIENT_IDS = [
+    "P001",
+    "P002",
     "PAT-2026-001",
     "PAT-2026-002",
     "PAT-2026-003",

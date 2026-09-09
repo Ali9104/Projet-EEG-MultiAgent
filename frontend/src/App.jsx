@@ -23,6 +23,33 @@ const CHART_COLORS = {
   blue: "#3b82f6",
 };
 
+const TRACE_PATHS = {
+  patients: "0,14 8,14 16,6 20,22 24,14 34,14 42,6 46,22 50,14 64,14",
+  volume:
+    "0,14 4,10 8,18 12,8 16,20 20,10 24,16 28,8 32,18 36,10 40,16 44,8 48,18 52,12 56,16 60,10 64,14",
+  critical: "0,14 8,14 12,2 16,26 20,14 32,14 38,3 42,25 46,14 64,14",
+  archived: "0,9 8,19 16,11 24,17 32,13 40,14 48,14 56,14 64,14",
+};
+
+function Trace({ shape, className }) {
+  return (
+    <svg
+      className={`stat-trace ${className}`}
+      viewBox="0 0 64 28"
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      <polyline
+        points={TRACE_PATHS[shape]}
+        fill="none"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function App() {
   const [dashboard, setDashboard] = useState(null);
   const [patients, setPatients] = useState([]);
@@ -319,9 +346,7 @@ function App() {
 
           <div className="stat-card">
 
-            <div className="stat-icon blue">
-              👶
-            </div>
+            <Trace shape="patients" className="blue" />
 
             <div className="stat-content">
 
@@ -343,9 +368,7 @@ function App() {
 
           <div className="stat-card">
 
-            <div className="stat-icon cyan">
-              ◈
-            </div>
+            <Trace shape="volume" className="cyan" />
 
             <div className="stat-content">
 
@@ -367,9 +390,7 @@ function App() {
 
           <div className="stat-card critical-card">
 
-            <div className="stat-icon red">
-              !
-            </div>
+            <Trace shape="critical" className="red" />
 
             <div className="stat-content">
 
@@ -391,9 +412,7 @@ function App() {
 
           <div className="stat-card">
 
-            <div className="stat-icon purple">
-              ▣
-            </div>
+            <Trace shape="archived" className="purple" />
 
             <div className="stat-content">
 

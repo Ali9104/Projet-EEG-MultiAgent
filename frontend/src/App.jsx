@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback, memo } from "react";
 import {
   BarChart,
   Bar,
@@ -14,7 +14,7 @@ import {
 } from "recharts";
 import "./App.css";
 
-const API_URL = "http://127.0.0.1:8000/api/eeg";
+const API_URL = import.meta.env?.VITE_API_URL || "http://127.0.0.1:8000/api/eeg";
 
 const CHART_COLORS = {
   normal: "#22c55e",
@@ -25,30 +25,37 @@ const CHART_COLORS = {
 
 const TRACE_PATHS = {
   patients: "0,14 8,14 16,6 20,22 24,14 34,14 42,6 46,22 50,14 64,14",
-  volume:
-    "0,14 4,10 8,18 12,8 16,20 20,10 24,16 28,8 32,18 36,10 40,16 44,8 48,18 52,12 56,16 60,10 64,14",
+  volume: "0,14 4,10 8,18 12,8 16,20 20,10 24,16 28,8 32,18 36,10 40,16 44,8 48,18 52,12 56,16 60,10 64,14",
   critical: "0,14 8,14 12,2 16,26 20,14 32,14 38,3 42,25 46,14 64,14",
   archived: "0,9 8,19 16,11 24,17 32,13 40,14 48,14 56,14 64,14",
 };
 
-function Trace({ shape, className }) {
-  return (
-    <svg
-      className={`stat-trace ${className}`}
-      viewBox="0 0 64 28"
-      preserveAspectRatio="none"
-      aria-hidden="true"
-    >
-      <polyline
-        points={TRACE_PATHS[shape]}
-        fill="none"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
+const AGENTS_METADATA = [
+  { name: "Acquisition", id: "acquisition", description: "Réception des données EEG", icon: "⇣" },
+  { name: "Analyse", id: "analysis", description: "Détection des anomalies", icon: "⌁" },
+  { name: "Décision", id: "decision", description: "Choix de la stratégie de stockage", icon: "◆" },
+  { name: "Archivage", id: "archival", description: "Archivage des anciennes données", icon: "▣" },
+];
+
+const ARCHIVES_PER_PAGE = 20;
+
+// Composants secondaires extraits
+const Trace = memo(({ shape, className }) => (
+  <svg className={`stat-trace ${className}`} viewBox="0 0 64 28" preserveAspectRatio="none" aria-hidden="true">
+    <polyline points={TRACE_PATHS[shape]} fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+));
+
+const StatCard = memo(({ shape, colorClass, title, value, subtitle }) => (
+  <div className={`stat-card ${colorClass === "red" ? "critical-card" : ""}`}>
+    <Trace shape={shape} className={colorClass} />
+    <div className="stat-content">
+      <span>{title}</span>
+      <strong>{value.toLocaleString()}</strong>
+      <small>{subtitle}</small>
+    </div>
+  </div>
+));
 
 function App() {
   const [dashboard, setDashboard] = useState(null);
@@ -61,873 +68,260 @@ function App() {
   const [archiveLoading, setArchiveLoading] = useState(false);
 
   const [agentStatuses, setAgentStatuses] = useState({});
-
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const ARCHIVES_PER_PAGE = 20;
+  // Chargement des données initiales
+  const fetchInitialData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [dashRes, patRes, alertRes] = await Promise.all([
+        fetch(`${API_URL}/dashboard`),
+        fetch(`${API_URL}/patients`),
+        fetch(`${API_URL}/alerts`),
+      ]);
 
-  /* =====================================================
-     DASHBOARD
-  ===================================================== */
+      if (!dashRes.ok || !patRes.ok || !alertRes.ok) {
+        throw new Error("Erreur lors de la récupération des données principales.");
+      }
+
+      const [dashData, patData, alertData] = await Promise.all([
+        dashRes.json(),
+        patRes.json(),
+        alertRes.json(),
+      ]);
+
+      setDashboard(dashData);
+      setPatients(patData.patients || []);
+      setAlerts(alertData.alerts || []);
+    } catch (err) {
+      console.error(err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    fetch(`${API_URL}/dashboard`)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Erreur serveur");
+    fetchInitialData();
+  }, [fetchInitialData]);
+
+  // Polling du statut des agents avec gestion de nettoyage
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const fetchAgentStatuses = async () => {
+      try {
+        const response = await fetch(`${API_URL}/agents/status`, { signal: controller.signal });
+        if (!response.ok) throw new Error();
+        const data = await response.json();
+        setAgentStatuses(data.agents || {});
+      } catch (err) {
+        if (err.name !== "AbortError") {
+          console.error("Erreur statuts agents :", err);
         }
-        return response.json();
-      })
-      .then((data) => setDashboard(data))
-      .catch((error) =>
-        console.error("Erreur dashboard :", error)
-      )
-      .finally(() => setLoading(false));
-  }, []);
-
-  /* =====================================================
-     PATIENTS
-  ===================================================== */
-
-  useEffect(() => {
-    fetch(`${API_URL}/patients`)
-      .then((response) => response.json())
-      .then((data) => setPatients(data.patients || []))
-      .catch((error) =>
-        console.error("Erreur patients :", error)
-      );
-  }, []);
-
-  /* =====================================================
-     ALERTES
-  ===================================================== */
-
-  useEffect(() => {
-    fetch(`${API_URL}/alerts`)
-      .then((response) => response.json())
-      .then((data) => setAlerts(data.alerts || []))
-      .catch((error) =>
-        console.error("Erreur alertes :", error)
-      );
-  }, []);
-
-  /* =====================================================
-     AGENTS STATUS
-  ===================================================== */
-
-  useEffect(() => {
-    const fetchAgentStatuses = () => {
-      fetch(`${API_URL}/agents/status`)
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error("Erreur statut agents");
-          }
-
-          return response.json();
-        })
-        .then((data) => {
-          setAgentStatuses(data.agents || {});
-        })
-        .catch((error) =>
-          console.error("Erreur statuts agents :", error)
-        );
+      }
     };
 
-    // Première récupération immédiate
     fetchAgentStatuses();
+    const interval = setInterval(fetchAgentStatuses, 5000);
 
-    // Actualisation toutes les 5 secondes
-    const interval = setInterval(
-      fetchAgentStatuses,
-      5000
-    );
-
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      controller.abort();
+    };
   }, []);
 
-  /* =====================================================
-     ARCHIVES
-  ===================================================== */
-
+  // Chargement des archives paginées
   useEffect(() => {
+    const controller = new AbortController();
     setArchiveLoading(true);
 
-    fetch(
-      `${API_URL}/archives?page=${archivePage}&limit=${ARCHIVES_PER_PAGE}`
-    )
-      .then((response) => response.json())
+    fetch(`${API_URL}/archives?page=${archivePage}&limit=${ARCHIVES_PER_PAGE}`, { signal: controller.signal })
+      .then((res) => res.json())
       .then((data) => {
         setArchives(data.archives || []);
         setArchiveTotal(data.total || 0);
       })
-      .catch((error) =>
-        console.error("Erreur archives :", error)
-      )
+      .catch((err) => {
+        if (err.name !== "AbortError") console.error("Erreur archives :", err);
+      })
       .finally(() => setArchiveLoading(false));
+
+    return () => controller.abort();
   }, [archivePage]);
 
-  /* =====================================================
-     VALUES
-  ===================================================== */
-
+  // Mémorisation des variables
   const totalEEG = dashboard?.total_eeg ?? 0;
   const normalCount = dashboard?.normal ?? 0;
   const criticalCount = dashboard?.alerts ?? 0;
   const archivedCount = dashboard?.archived ?? archiveTotal;
+  const totalArchivePages = Math.max(1, Math.ceil(archiveTotal / ARCHIVES_PER_PAGE));
 
-  const totalArchivePages = Math.max(
-    1,
-    Math.ceil(archiveTotal / ARCHIVES_PER_PAGE)
-  );
-
-  /* =====================================================
-     STORAGE CHART
-  ===================================================== */
-
-  const storageData = useMemo(
-    () => [
-      {
-        name: "Normal",
-        value: normalCount,
-        color: CHART_COLORS.normal,
-      },
-      {
-        name: "Critique",
-        value: criticalCount,
-        color: CHART_COLORS.critical,
-      },
-      {
-        name: "Archivé",
-        value: archivedCount,
-        color: CHART_COLORS.archived,
-      },
-    ],
-    [normalCount, criticalCount, archivedCount]
-  );
-
-  /* =====================================================
-     ALERTS BY PATIENT
-  ===================================================== */
+  const storageData = useMemo(() => [
+    { name: "Normal", value: normalCount, color: CHART_COLORS.normal },
+    { name: "Critique", value: criticalCount, color: CHART_COLORS.critical },
+    { name: "Archivé", value: archivedCount, color: CHART_COLORS.archived },
+  ], [normalCount, criticalCount, archivedCount]);
 
   const alertsByPatient = useMemo(() => {
-    const counter = {};
-
-    alerts.forEach((alert) => {
+    const counter = alerts.reduce((acc, alert) => {
       const patient = alert.patient_id || "Inconnu";
+      acc[patient] = (acc[patient] || 0) + 1;
+      return acc;
+    }, {});
 
-      counter[patient] = (counter[patient] || 0) + 1;
-    });
-
-    return Object.entries(counter).map(
-      ([patient, count]) => ({
-        patient,
-        count,
-      })
-    );
+    return Object.entries(counter).map(([patient, count]) => ({ patient, count }));
   }, [alerts]);
 
-  /* =====================================================
-     AGENTS
-  ===================================================== */
-
-  const agents = [
-    {
-      name: "Acquisition",
-      id: "acquisition",
-      description: "Réception des données EEG",
-      icon: "⇣",
-    },
-    {
-      name: "Analyse",
-      id: "analysis",
-      description: "Détection des anomalies",
-      icon: "⌁",
-    },
-    {
-      name: "Décision",
-      id: "decision",
-      description: "Choix de la stratégie de stockage",
-      icon: "◆",
-    },
-    {
-      name: "Archivage",
-      id: "archival",
-      description: "Archivage des anciennes données",
-      icon: "▣",
-    },
-  ];
-
-  const activeAgentsCount = Object.values(
-    agentStatuses
-  ).filter((status) => status === "active").length;
-
-  /* =====================================================
-     PAGINATION
-  ===================================================== */
-
-  const goToPreviousPage = () => {
-    if (archivePage > 1) {
-      setArchivePage((page) => page - 1);
-    }
-  };
-
-  const goToNextPage = () => {
-    if (archivePage < totalArchivePages) {
-      setArchivePage((page) => page + 1);
-    }
-  };
-
-  /* =====================================================
-     LOADING
-  ===================================================== */
+  const activeAgentsCount = useMemo(
+    () => Object.values(agentStatuses).filter((status) => status === "active").length,
+    [agentStatuses]
+  );
 
   if (loading) {
     return (
       <div className="loading-screen">
         <div className="loader"></div>
+        <p>Chargement du système EEG...</p>
+      </div>
+    );
+  }
 
-        <p>
-          Chargement du système EEG...
-        </p>
+  if (error) {
+    return (
+      <div className="error-screen">
+        <p>Une erreur est survenue : {error}</p>
+        <button onClick={fetchInitialData}>Réessayer</button>
       </div>
     );
   }
 
   return (
     <div className="app">
-
-      {/* =================================================
-          HEADER
-      ================================================= */}
-
       <header className="header">
-
         <div className="header-content">
-
           <div className="brand">
-
-            <div className="brand-icon">
-              EEG
-            </div>
-
+            <div className="brand-icon">EEG</div>
             <div>
-
-              <h1>
-                EEG Monitoring
-              </h1>
-
-              <p>
-                Système Multi-Agent de gestion des EEG néonataux
-              </p>
-
+              <h1>EEG Monitoring</h1>
+              <p>Système Multi-Agent de gestion des EEG néonataux</p>
             </div>
-
           </div>
-
           <div className="system-status">
-
             <span className="status-dot"></span>
-
             Système opérationnel
-
           </div>
-
         </div>
-
       </header>
 
       <main className="container">
-
-        {/* =================================================
-            KPI
-        ================================================= */}
-
+        {/* KPI */}
         <section className="stats">
-
-          <div className="stat-card">
-
-            <Trace shape="patients" className="blue" />
-
-            <div className="stat-content">
-
-              <span>
-                Patients
-              </span>
-
-              <strong>
-                {dashboard?.patients ?? 0}
-              </strong>
-
-              <small>
-                patients surveillés
-              </small>
-
-            </div>
-
-          </div>
-
-          <div className="stat-card">
-
-            <Trace shape="volume" className="cyan" />
-
-            <div className="stat-content">
-
-              <span>
-                Total EEG
-              </span>
-
-              <strong>
-                {totalEEG.toLocaleString()}
-              </strong>
-
-              <small>
-                données collectées
-              </small>
-
-            </div>
-
-          </div>
-
-          <div className="stat-card critical-card">
-
-            <Trace shape="critical" className="red" />
-
-            <div className="stat-content">
-
-              <span>
-                Alertes critiques
-              </span>
-
-              <strong>
-                {criticalCount.toLocaleString()}
-              </strong>
-
-              <small>
-                anomalies détectées
-              </small>
-
-            </div>
-
-          </div>
-
-          <div className="stat-card">
-
-            <Trace shape="archived" className="purple" />
-
-            <div className="stat-content">
-
-              <span>
-                Archives
-              </span>
-
-              <strong>
-                {archivedCount.toLocaleString()}
-              </strong>
-
-              <small>
-                données archivées
-              </small>
-
-            </div>
-
-          </div>
-
+          <StatCard shape="patients" colorClass="blue" title="Patients" value={dashboard?.patients ?? 0} subtitle="patients surveillés" />
+          <StatCard shape="volume" colorClass="cyan" title="Total EEG" value={totalEEG} subtitle="données collectées" />
+          <StatCard shape="critical" colorClass="red" title="Alertes critiques" value={criticalCount} subtitle="anomalies détectées" />
+          <StatCard shape="archived" colorClass="purple" title="Archives" value={archivedCount} subtitle="données archivées" />
         </section>
 
-        {/* =================================================
-            AGENTS
-        ================================================= */}
-
+        {/* AGENTS */}
         <section className="panel agents-panel">
-
           <div className="panel-header">
-
             <div>
-
-              <h2>
-                Agents du système
-              </h2>
-
-              <p>
-                État des agents multi-agents
-              </p>
-
+              <h2>Agents du système</h2>
+              <p>État des agents multi-agents</p>
             </div>
-
             <div className="agents-online">
-
               <span></span>
-
-              {activeAgentsCount} agent
-              {activeAgentsCount > 1 ? "s" : ""} actif
-              {activeAgentsCount > 1 ? "s" : ""}
-
+              {activeAgentsCount} agent{activeAgentsCount > 1 ? "s" : ""} actif{activeAgentsCount > 1 ? "s" : ""}
             </div>
-
           </div>
-
           <div className="agents-grid">
-
-            {agents.map((agent) => {
-
-              const isActive =
-                agentStatuses[agent.id] === "active";
-
+            {AGENTS_METADATA.map((agent) => {
+              const isActive = agentStatuses[agent.id] === "active";
               return (
-
-                <div
-                  className="agent-card"
-                  key={agent.name}
-                >
-
-                  <div className="agent-icon">
-                    {agent.icon}
-                  </div>
-
+                <div className="agent-card" key={agent.id}>
+                  <div className="agent-icon">{agent.icon}</div>
                   <div className="agent-info">
-
-                    <strong>
-                      Agent {agent.name}
-                    </strong>
-
-                    <span>
-                      {agent.description}
-                    </span>
-
+                    <strong>Agent {agent.name}</strong>
+                    <span>{agent.description}</span>
                   </div>
-
-                  <div
-                    className={`agent-status ${
-                      isActive
-                        ? "active"
-                        : "inactive"
-                    }`}
-                  >
-
+                  <div className={`agent-status ${isActive ? "active" : "inactive"}`}>
                     <span></span>
-
-                    {isActive
-                      ? "Actif"
-                      : "Inactif"}
-
+                    {isActive ? "Actif" : "Inactif"}
                   </div>
-
                 </div>
-
               );
             })}
-
           </div>
-
         </section>
 
-        {/* =================================================
-            CHARTS
-        ================================================= */}
-
+        {/* GRAPHIES */}
         <section className="charts-grid">
-
-          {/* STORAGE */}
-
           <div className="panel chart-panel">
-
             <div className="panel-header">
-
-              <div>
-
-                <h2>
-                  Répartition des données
-                </h2>
-
-                <p>
-                  État des données EEG dans le système
-                </p>
-
-              </div>
-
+              <h2>Répartition des données</h2>
             </div>
-
             <div className="chart-container">
-
-              <ResponsiveContainer
-                width="100%"
-                height={300}
-              >
-
+              <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
-
-                  <Pie
-                    data={storageData}
-                    cx="50%"
-                    cy="48%"
-                    innerRadius={72}
-                    outerRadius={108}
-                    paddingAngle={4}
-                    dataKey="value"
-                    nameKey="name"
-                  >
-
-                    {storageData.map(
-                      (entry, index) => (
-
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={entry.color}
-                          stroke="none"
-                        />
-
-                      )
-                    )}
-
+                  <Pie data={storageData} cx="50%" cy="48%" innerRadius={72} outerRadius={108} paddingAngle={4} dataKey="value" nameKey="name">
+                    {storageData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
+                    ))}
                   </Pie>
-
                   <Tooltip
-                    contentStyle={{
-                      borderRadius: "10px",
-                      border: "1px solid #26334a",
-                      background: "#101827",
-                      color: "#ffffff",
-                    }}
+                    wrapperStyle={{ zIndex: 1000 }}
+                    contentStyle={{ borderRadius: "10px", background: "#101827", color: "#fff" }}
                   />
-
                   <Legend />
-
                 </PieChart>
-
               </ResponsiveContainer>
-
             </div>
-
           </div>
-
-          {/* ALERTS */}
 
           <div className="panel chart-panel">
-
             <div className="panel-header">
-
-              <div>
-
-                <h2>
-                  Alertes par patient
-                </h2>
-
-                <p>
-                  Distribution des anomalies détectées
-                </p>
-
-              </div>
-
+              <h2>Alertes par patient</h2>
             </div>
-
             <div className="chart-container">
-
               {alertsByPatient.length === 0 ? (
-
-                <div className="empty-state">
-                  Aucune donnée disponible.
-                </div>
-
+                <div className="empty-state">Aucune donnée disponible.</div>
               ) : (
-
-                <ResponsiveContainer
-                  width="100%"
-                  height={300}
-                >
-
-                  <BarChart
-                    data={alertsByPatient}
-                    margin={{
-                      top: 10,
-                      right: 20,
-                      left: -10,
-                      bottom: 10,
-                    }}
-                  >
-
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="#26334a"
-                    />
-
-                    <XAxis
-                      dataKey="patient"
-                      tick={{
-                        fill: "#94a3b8",
-                        fontSize: 11,
-                      }}
-                      axisLine={{
-                        stroke: "#334155",
-                      }}
-                    />
-
-                    <YAxis
-                      allowDecimals={false}
-                      tick={{
-                        fill: "#94a3b8",
-                        fontSize: 11,
-                      }}
-                      axisLine={{
-                        stroke: "#334155",
-                      }}
-                    />
-
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={alertsByPatient} margin={{ top: 10, right: 20, left: -10, bottom: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#26334a" />
+                    <XAxis dataKey="patient" tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                    <YAxis allowDecimals={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
                     <Tooltip
-                      contentStyle={{
-                        borderRadius: "10px",
-                        border: "1px solid #26334a",
-                        background: "#101827",
-                        color: "#ffffff",
-                      }}
+                      wrapperStyle={{ zIndex: 1000 }}
+                      contentStyle={{ borderRadius: "10px", background: "#101827", color: "#fff" }}
                     />
-
-                    <Bar
-                      dataKey="count"
-                      name="Alertes"
-                      fill={CHART_COLORS.critical}
-                      radius={[7, 7, 0, 0]}
-                    />
-
+                    <Bar dataKey="count" name="Alertes" fill={CHART_COLORS.critical} radius={[7, 7, 0, 0]} />
                   </BarChart>
-
                 </ResponsiveContainer>
-
               )}
-
             </div>
-
           </div>
-
         </section>
 
-        {/* =================================================
-            PATIENTS
-        ================================================= */}
-
+        {/* ARCHIVES TABLE */}
         <section className="panel">
-
           <div className="panel-header">
-
-            <div>
-
-              <h2>
-                Patients
-              </h2>
-
-              <p>
-                Patients actuellement surveillés
-              </p>
-
-            </div>
-
-            <span className="count-badge">
-              {patients.length} patient(s)
-            </span>
-
-          </div>
-
-          {patients.length === 0 ? (
-
-            <div className="empty-state">
-              Aucun patient disponible.
-            </div>
-
-          ) : (
-
-            <div className="patients">
-
-              {patients.map((patient) => (
-
-                <div
-                  className="patient-card"
-                  key={patient}
-                >
-
-                  <div className="patient-avatar">
-
-                    {patient
-                      .toString()
-                      .slice(-2)}
-
-                  </div>
-
-                  <div className="patient-details">
-
-                    <strong>
-                      {patient}
-                    </strong>
-
-                    <span>
-                      Surveillance EEG active
-                    </span>
-
-                  </div>
-
-                  <div className="patient-status">
-
-                    <span></span>
-
-                    Actif
-
-                  </div>
-
-                </div>
-
-              ))}
-
-            </div>
-
-          )}
-
-        </section>
-
-        {/* =================================================
-            ALERTES
-        ================================================= */}
-
-        <section className="panel">
-
-          <div className="panel-header">
-
-            <div>
-
-              <h2>
-                Alertes critiques
-              </h2>
-
-              <p>
-                Dernières anomalies détectées
-              </p>
-
-            </div>
-
-            <span className="critical-badge">
-              {alerts.length} alertes
-            </span>
-
-          </div>
-
-          {alerts.length === 0 ? (
-
-            <div className="empty-state">
-              Aucune alerte critique.
-            </div>
-
-          ) : (
-
-            <div className="alerts">
-
-              {alerts
-                .slice(0, 10)
-                .map((alert) => (
-
-                  <div
-                    className="alert"
-                    key={alert._id}
-                  >
-
-                    <div className="alert-indicator">
-                      !
-                    </div>
-
-                    <div className="alert-main">
-
-                      <strong>
-                        {alert.patient_id}
-                      </strong>
-
-                      <span>
-                        Anomalie détectée
-                      </span>
-
-                    </div>
-
-                    <div className="alert-info">
-
-                      <span>
-                        Step
-                      </span>
-
-                      <strong>
-                        {alert.step}
-                      </strong>
-
-                    </div>
-
-                    <div className="alert-info">
-
-                      <span>
-                        Amplitude
-                      </span>
-
-                      <strong>
-                        {alert.max_amplitude}
-                      </strong>
-
-                    </div>
-
-                    <span className="priority-badge">
-                      {alert.priority}
-                    </span>
-
-                  </div>
-
-                ))}
-
-            </div>
-
-          )}
-
-        </section>
-
-        {/* =================================================
-            ARCHIVES
-        ================================================= */}
-
-        <section className="panel">
-
-          <div className="panel-header">
-
-            <div>
-
-              <h2>
-                Archives EEG
-              </h2>
-
-              <p>
-                Données archivées dans MinIO
-              </p>
-
-            </div>
-
-            <span className="count-badge">
-              {archiveTotal.toLocaleString()} archives
-            </span>
-
+            <h2>Archives EEG</h2>
+            <span className="count-badge">{archiveTotal.toLocaleString()} archives</span>
           </div>
 
           {archiveLoading ? (
-
-            <div className="empty-state">
-              Chargement des archives...
-            </div>
-
+            <div className="empty-state">Chargement des archives...</div>
           ) : archives.length === 0 ? (
-
-            <div className="empty-state">
-              Aucune archive disponible.
-            </div>
-
+            <div className="empty-state">Aucune archive disponible.</div>
           ) : (
-
             <>
-
               <div className="archive-table-wrapper">
-
                 <table className="archive-table">
-
                   <thead>
-
                     <tr>
                       <th>Patient</th>
                       <th>Step</th>
@@ -936,118 +330,43 @@ function App() {
                       <th>Amplitude</th>
                       <th>Fichier MinIO</th>
                     </tr>
-
                   </thead>
-
                   <tbody>
-
-                    {archives.map((archive) => (
-
-                      <tr key={archive._id}>
-
+                    {archives.map((archive, index) => (
+                      <tr key={archive._id || index}>
+                        <td><strong>{archive.patient_id}</strong></td>
+                        <td>{archive.step}</td>
+                        <td>{archive.timestamp ? new Date(archive.timestamp).toLocaleString() : "N/A"}</td>
                         <td>
-                          <strong>
-                            {archive.patient_id}
-                          </strong>
-                        </td>
-
-                        <td>
-                          {archive.step}
-                        </td>
-
-                        <td>
-                          {new Date(
-                            archive.timestamp
-                          ).toLocaleString()}
-                        </td>
-
-                        <td>
-
-                          <span
-                            className={
-                              archive.priority ===
-                              "CRITIQUE"
-                                ? "priority-badge"
-                                : "normal-badge"
-                            }
-                          >
-
+                          <span className={archive.priority === "CRITIQUE" ? "priority-badge" : "normal-badge"}>
                             {archive.priority}
-
                           </span>
-
                         </td>
-
-                        <td>
-                          {archive.max_amplitude}
-                        </td>
-
-                        <td className="archive-path">
-                          {archive.archive_object}
-                        </td>
-
+                        <td>{archive.max_amplitude}</td>
+                        <td className="archive-path">{archive.archive_object}</td>
                       </tr>
-
                     ))}
-
                   </tbody>
-
                 </table>
-
               </div>
 
               <div className="pagination">
-
-                <button
-                  onClick={goToPreviousPage}
-                  disabled={archivePage === 1}
-                >
+                <button onClick={() => setArchivePage((p) => Math.max(p - 1, 1))} disabled={archivePage === 1}>
                   ← Précédent
                 </button>
-
-                <span>
-
-                  Page{" "}
-
-                  <strong>
-                    {archivePage}
-                  </strong>
-
-                  {" "}sur{" "}
-
-                  <strong>
-                    {totalArchivePages}
-                  </strong>
-
-                </span>
-
-                <button
-                  onClick={goToNextPage}
-                  disabled={
-                    archivePage >= totalArchivePages
-                  }
-                >
+                <span>Page <strong>{archivePage}</strong> sur <strong>{totalArchivePages}</strong></span>
+                <button onClick={() => setArchivePage((p) => Math.min(p + 1, totalArchivePages))} disabled={archivePage >= totalArchivePages}>
                   Suivant →
                 </button>
-
               </div>
-
             </>
-
           )}
-
         </section>
-
       </main>
 
       <footer className="footer">
-
-        <p>
-          EEG Multi-Agent System · Technologies de Stockage Big Data
-        </p>
-
+        <p>EEG Multi-Agent System · Technologies de Stockage Big Data</p>
       </footer>
-
     </div>
   );
 }

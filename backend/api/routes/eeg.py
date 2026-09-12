@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-
+from backend.services.redis_service import create_client as create_redis_client
 from backend.services.kafka_service import create_producer
 from bson import ObjectId
 from fastapi import HTTPException
@@ -180,14 +180,8 @@ def get_archives(page: int = 1, limit: int = 20):
 
 @router.get("/agents/status")
 def get_agents_status():
-    import os
-    import redis
 
-    redis_client = redis.Redis(
-        host=os.getenv("REDIS_HOST", "localhost"),
-        port=int(os.getenv("REDIS_PORT", "6379")),
-        decode_responses=True,
-    )
+    redis_client = create_redis_client()
 
     agents = [
         "acquisition",
@@ -198,13 +192,21 @@ def get_agents_status():
 
     statuses = {}
 
-    for agent in agents:
-        key = f"agent:heartbeat:{agent}"
-        statuses[agent] = "active" if redis_client.exists(key) else "inactive"
+    try:
+        for agent in agents:
+            key = f"agent:heartbeat:{agent}"
+            statuses[agent] = (
+                "active"
+                if redis_client.exists(key)
+                else "inactive"
+            )
 
-    return {
-        "agents": statuses
-    }
+        return {
+            "agents": statuses
+        }
+
+    finally:
+        redis_client.close()
 
 @router.get("/{id}")
 def get_eeg(id: str):

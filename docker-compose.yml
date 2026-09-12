@@ -6,6 +6,7 @@ services:
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
     container_name: eeg-zookeeper
+    restart: unless-stopped
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
@@ -15,6 +16,7 @@ services:
   kafka:
     image: confluentinc/cp-kafka:7.5.0
     container_name: eeg-kafka
+    restart: unless-stopped
     depends_on:
       - zookeeper
     ports:
@@ -31,6 +33,7 @@ services:
   mongodb:
     image: mongo:6.0
     container_name: eeg-mongodb
+    restart: unless-stopped
     ports:
       - "27017:27017"
     environment:
@@ -43,6 +46,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: eeg-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
 
@@ -50,6 +54,7 @@ services:
   minio:
     image: minio/minio:RELEASE.2023-09-04T19-57-37Z
     container_name: eeg-minio
+    restart: unless-stopped
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -66,6 +71,7 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     container_name: eeg-backend
+    restart: unless-stopped
     depends_on:
       - kafka
       - mongodb
@@ -92,6 +98,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: eeg-frontend
+    restart: unless-stopped
     depends_on:
       - backend
     ports:
@@ -103,6 +110,7 @@ services:
       context: .
       dockerfile: agents/Dockerfile
     container_name: eeg-agent-acquisition
+    restart: unless-stopped
     depends_on:
       - kafka
       - redis
@@ -118,6 +126,7 @@ services:
       context: .
       dockerfile: agents/Dockerfile
     container_name: eeg-agent-analysis
+    restart: unless-stopped
     depends_on:
       - kafka
       - redis
@@ -133,6 +142,7 @@ services:
       context: .
       dockerfile: agents/Dockerfile
     container_name: eeg-agent-decision
+    restart: unless-stopped
     depends_on:
       - kafka
       - mongodb
@@ -157,6 +167,7 @@ services:
       context: .
       dockerfile: agents/Dockerfile
     container_name: eeg-agent-archival
+    restart: unless-stopped
     depends_on:
       - mongodb
       - minio
@@ -170,6 +181,7 @@ services:
       MINIO_BUCKET: eeg-data
       MINIO_SECURE: "false"
       ARCHIVE_AFTER_HOURS: 24
+      ARCHIVAL_INTERVAL_SECONDS: 300
       REDIS_HOST: redis
       REDIS_PORT: 6379
     command: python -m agents.archival.agent

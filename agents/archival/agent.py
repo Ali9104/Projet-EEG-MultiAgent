@@ -1,3 +1,6 @@
+import os
+import time
+
 from backend.services.mongo_service import (
     create_client as create_mongo_client,
     get_database
@@ -6,8 +9,7 @@ from backend.services.mongo_service import (
 from backend.services.minio_service import (
     create_client as create_minio_client,
     create_bucket,
-    upload_json,
-    MINIO_BUCKET
+    upload_json
 )
 
 from .archival_policy import is_old
@@ -29,6 +31,11 @@ class ArchivalAgent:
         create_bucket(self.minio_client)
 
         print("MinIO connecté.")
+
+        # Vérification périodique
+        self.interval = int(
+            os.getenv("ARCHIVAL_INTERVAL_SECONDS", "300")
+        )
 
     def archive_document(self, document):
 
@@ -60,13 +67,7 @@ class ArchivalAgent:
 
         return object_name
 
-    def run(self):
-
-        print("========================================")
-        print("        AGENT D'ARCHIVAGE EEG")
-        print("========================================")
-        heartbeat = AgentHeartbeat("archival")
-        heartbeat.start()
+    def archive_old_data(self):
 
         documents = self.db.eeg_data.find(
             {"archived": {"$ne": True}}
@@ -103,8 +104,43 @@ class ArchivalAgent:
             )
 
         print("----------------------------------------")
-        print(f"EEG archivés : {archived_count}")
+        print(f"EEG archivés pendant cette passe : {archived_count}")
         print("----------------------------------------")
+
+        return archived_count
+
+    def run(self):
+
+        print("========================================")
+        print("        AGENT D'ARCHIVAGE EEG")
+        print("========================================")
+        print(
+            f"Vérification toutes les "
+            f"{self.interval} secondes."
+        )
+
+        heartbeat = AgentHeartbeat("archival")
+        heartbeat.start()
+
+        try:
+            while True:
+
+                print("\n[ARCHIVAGE] Nouvelle vérification...")
+
+                self.archive_old_data()
+
+                print(
+                    f"[ARCHIVAGE] Prochaine vérification dans "
+                    f"{self.interval} secondes."
+                )
+
+                time.sleep(self.interval)
+
+        except KeyboardInterrupt:
+            print("\nArrêt de l'Agent d'Archivage.")
+
+        finally:
+            heartbeat.stop()
 
     def close(self):
 
